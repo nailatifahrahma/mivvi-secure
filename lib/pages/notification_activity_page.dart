@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../theme/activity_theme.dart';
 import '../widgets/activity_widgets.dart';
+import 'analysis_detail_page.dart';
+import 'analysis_history_page.dart';
+import 'security_education_page.dart';
 
 class NotificationActivityPage extends StatefulWidget {
   const NotificationActivityPage({super.key});
@@ -48,7 +51,7 @@ class _NotificationActivityPageState extends State<NotificationActivityPage> {
                     ActivityFilterBar(selected: _filter, onSelected: (value) => setState(() => _filter = value)),
                     const SizedBox(height: 13),
                     for (final sample in _visibleSamples) ...[
-                      NotificationActivityCard(sample: sample, onTap: () => _showDetails(sample), onManualAnalysis: () => _showManualMessage()),
+                      NotificationActivityCard(sample: sample, onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AnalysisDetailPage(sample: sample))), onManualAnalysis: () => _showManualMessage()),
                       const SizedBox(height: 8),
                     ],
                     const SizedBox(height: 7),
@@ -65,23 +68,18 @@ class _NotificationActivityPageState extends State<NotificationActivityPage> {
   void _handleNav(int index) {
     if (index == 0) {
       Navigator.of(context).maybePop();
+    } else if (index == 2) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute<void>(builder: (_) => const AnalysisHistoryPage()));
+    } else if (index == 3) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute<void>(builder: (_) => const SecurityEducationPage()));
     } else if (index != 1) {
-      final labels = ['Beranda', 'Aktivitas', 'Riwayat', 'Edukasi', 'Pengaturan'];
+      const labels = ['Beranda', 'Aktivitas', 'Riwayat', 'Edukasi', 'Pengaturan'];
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${labels[index]} akan tersedia berikutnya.')));
     }
   }
 
-  void _showDetails(NotificationActivitySample sample) => showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: ActivityTheme.panel,
-        builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(sample.title, style: const TextStyle(color: ActivityTheme.ink, fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          Text(sample.message, style: const TextStyle(color: ActivityTheme.muted, height: 1.5)),
-          const SizedBox(height: 14),
-          Text('Skor risiko: ${sample.score}  •  ${sample.status}', style: const TextStyle(color: ActivityTheme.cyan, fontSize: 10)),
-        ]))),
-      );
-
   void _showManualMessage() => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Analisis manual tersedia saat teks notifikasi dapat dibaca.')));
 }
+
+
+

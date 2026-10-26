@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/dashboard_theme.dart';
 import '../widgets/dashboard_widgets.dart';
 import 'notification_activity_page.dart';
+import 'analysis_history_page.dart';
+import 'security_education_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -50,6 +52,10 @@ class _DashboardPageState extends State<DashboardPage> {
                     .then((_) {
                   if (mounted) setState(() => _selectedTab = 0);
                 });
+              } else if (index == 2) {
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AnalysisHistoryPage()));
+              } else if (index == 3) {
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SecurityEducationPage()));
               } else if (index == 0) {
                 setState(() => _selectedTab = 0);
               } else {
@@ -63,6 +69,8 @@ class _DashboardPageState extends State<DashboardPage> {
       );
 
 }
+
+
 
 
 
