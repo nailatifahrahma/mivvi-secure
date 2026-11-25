@@ -4,9 +4,9 @@
 
 MIVVI SECURE adalah prototipe aplikasi Android yang membantu pengguna mengenali indikasi phishing pada pesan SMS dan WhatsApp. Aplikasi menganalisis teks yang tersedia pada notifikasi atau teks yang dimasukkan secara manual, lalu menampilkan skor dan kategori risiko.
 
-Metode deteksi yang digunakan adalah **Rule-Based Risk Scoring**. Sistem tidak menggunakan machine learning atau model AI. Analisis pesan dilakukan di perangkat Android, sedangkan backend FastAPI bersifat opsional dan hanya menyediakan konfigurasi aturan deteksi.
+Metode deteksi yang digunakan adalah **Rule-Based Risk Scoring**. Sistem tidak menggunakan machine learning atau model AI. Analisis pesan dilakukan di perangkat Android. Backend FastAPI menyediakan konfigurasi aturan dan layanan akun untuk registrasi/login.
 
-> **Status proyek:** source code Android dan backend API tersedia. APK belum disertakan karena APK belum berhasil dibangun di lingkungan pembuatan ini. Panduan build lokal dan GitHub Actions tersedia di repository. Jangan menganggap source code sebagai APK yang siap dipasang.
+> **Status proyek:** source code Android dan backend API tersedia. APK debug tidak dilacak di repository; build lokal menghasilkan `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Daftar Isi
 
@@ -78,7 +78,7 @@ Ruang lingkup implementasi saat ini:
 - Metode: pencocokan pola dan perhitungan skor deterministik.
 - Penyimpanan: SQLite lokal pada perangkat.
 - Sinkronisasi: pengambilan konfigurasi aturan dari Rules API opsional.
-- Autentikasi akun: halaman Login, Sign Up, dan Forgot Password masih berupa UI prototype; belum ada layanan akun.
+- Autentikasi akun Android: registrasi dengan OTP email, login, pemulihan kata sandi dengan OTP email, sesi bearer yang dapat dicabut, dan logout menggunakan backend FastAPI.
 
 Di luar ruang lingkup: membaca database privat WhatsApp, mengambil seluruh SMS melalui database sistem, mencegat isi pesan sebelum diterima aplikasi sumber, memblokir atau menghapus pesan otomatis, dan menjamin bahwa semua pesan yang dikategorikan AMAN benar-benar aman.
 
@@ -114,7 +114,9 @@ Pengguna dapat memilih sumber notifikasi SMS/WhatsApp, mengelola pengirim teperc
 
 ### 5.8 Login dan Registrasi
 
-Halaman Login, Sign Up, dan Forgot Password merupakan rancangan antarmuka. Belum ada autentikasi, penyimpanan akun, atau proses pemulihan kata sandi pada backend. Pengguna dapat melanjutkan sebagai tamu.
+Login dan registrasi Android terhubung ke Rules API melalui `/api/v1/auth`. Akun baru harus memasukkan OTP enam digit yang dikirim ke email sebelum sesi dibuat. Halaman Forgot Password meminta OTP email; konfirmasi kode mengganti hash kata sandi dan mencabut sesi lama. Password disimpan sebagai hash scrypt di SQLite backend; token sesi disimpan terenkripsi menggunakan Android Keystore. Ikon akun pada header membuka halaman Akun Pribadi; login tetap opsional karena pengguna juga dapat melanjutkan sebagai tamu. Pengiriman OTP memerlukan konfigurasi SMTP di server (`MIVVI_SMTP_HOST`, `MIVVI_SMTP_PORT`, `MIVVI_SMTP_USER`, `MIVVI_SMTP_PASSWORD`, opsional `MIVVI_SMTP_FROM`).
+
+Untuk emulator Android, base URL backend default adalah `http://10.0.2.2:8000`. Untuk ponsel fisik, gunakan alamat IP LAN komputer yang menjalankan backend.
 
 ## 6. Arsitektur dan Alur Kerja Sistem
 
@@ -363,7 +365,7 @@ WhatsApp mengirimkan notifikasi melalui koneksi internet, baik data seluler maup
 
 ## 11. Rules API
 
-Rules API dibuat menggunakan FastAPI dan berfungsi menyediakan konfigurasi aturan deteksi yang dapat diperbarui. API bukan mesin analisis pesan.
+Backend FastAPI menyediakan konfigurasi aturan dan endpoint autentikasi akun. API bukan mesin analisis pesan.
 
 ### Endpoint
 
@@ -371,6 +373,14 @@ Rules API dibuat menggunakan FastAPI dan berfungsi menyediakan konfigurasi atura
 |---|---|---|
 | GET | `/api/v1/health` | Memeriksa status layanan |
 | GET | `/api/v1/rules` | Mengambil konfigurasi aturan deteksi |
+| POST | `/api/v1/auth/register` | Membuat akun menunggu verifikasi dan mengirim OTP email |
+| POST | `/api/v1/auth/verify-email` | Memverifikasi OTP dan membuat sesi |
+| POST | `/api/v1/auth/resend-verification` | Mengirim ulang OTP akun yang belum diverifikasi |
+| POST | `/api/v1/auth/login` | Memverifikasi akun dan membuat sesi |
+| POST | `/api/v1/auth/password-reset/request` | Meminta OTP reset kata sandi melalui email |
+| POST | `/api/v1/auth/password-reset/confirm` | Mengganti kata sandi dengan OTP yang valid |
+| GET | `/api/v1/auth/me` | Membaca profil akun dari token bearer |
+| POST | `/api/v1/auth/logout` | Mencabut sesi bearer |
 
 Konfigurasi berisi:
 
@@ -385,7 +395,7 @@ Konfigurasi berisi:
 
 Android mengambil konfigurasi dengan request `GET /api/v1/rules`, mem-parsing JSON, lalu menyimpan konfigurasi di `SharedPreferences`. Jika API tidak tersedia atau konfigurasi gagal dibaca, aplikasi menggunakan aturan default lokal.
 
-**Batas data:** implementasi API tidak menerima isi pesan, nomor/identitas pengirim, payload notifikasi, atau riwayat analisis. API hanya mengirim konfigurasi aturan ke aplikasi.
+**Batas data:** API autentikasi menerima nama, email, dan password saat registrasi/login. Password disimpan sebagai hash. API tidak menerima isi pesan, nomor/identitas pengirim, payload notifikasi, atau riwayat analisis; konfigurasi aturan dikirim ke aplikasi.
 
 ## 12. Database dan Riwayat Analisis
 
@@ -407,8 +417,9 @@ Database berada pada penyimpanan privat aplikasi. **Database lokal belum dienkri
 
 Nama dan pengelompokan layar pada implementasi Android dapat berbeda dari nomor halaman pada rancangan Figma. Beberapa halaman Figma diwujudkan sebagai state, dialog, atau bagian dari layar induk.
 
-- **Welcome / Guest:** halaman awal untuk masuk sebagai tamu atau membuka UI autentikasi.
-- **Login / Sign Up / Forgot Password:** antarmuka rancangan; belum terhubung ke autentikasi backend.
+- **Welcome / Guest:** halaman awal untuk masuk sebagai tamu atau membuka autentikasi.
+- **Login / Sign Up:** terhubung ke backend akun; akun baru dapat dibuat dari aplikasi dan login membuat sesi.
+- **Forgot Password:** meminta OTP email dan mengganti kata sandi setelah kode diverifikasi; semua sesi lama dicabut.
 - **Beranda:** ringkasan dan akses ke fitur utama.
 - **Hubungkan Notifikasi:** petunjuk untuk membuka pengaturan Notification Access Android.
 - **Analisis Manual:** input pesan dan pengirim opsional untuk diuji.
@@ -429,7 +440,7 @@ Nama dan pengelompokan layar pada implementasi Android dapat berbeda dari nomor 
 - **Regular Expression (Regex):** normalisasi pola, ekstraksi URL, dan deteksi frasa.
 - **SQLite:** penyimpanan lokal riwayat analisis.
 - **SharedPreferences:** penyimpanan preferensi dan cache konfigurasi aturan.
-- **Python + FastAPI:** backend opsional untuk menyediakan Rules API.
+- **Python + FastAPI:** backend untuk API aturan dan autentikasi akun.
 - **JSON:** format konfigurasi aturan.
 
 ### Struktur repository
@@ -561,7 +572,8 @@ Smoke test mencakup contoh skor 13 (PHISHING) dan pengujian ambang kategori AMAN
 | SQLite untuk riwayat | Diimplementasikan |
 | NotificationListenerService | Diimplementasikan; memerlukan izin Android dan pratinjau notifikasi yang terlihat |
 | Sinkronisasi Rules API | Diimplementasikan |
-| Login/Sign Up/Forgot Password | UI prototype; autentikasi backend belum ada |
+| Android Login/Sign Up/OTP Email/Logout | Diimplementasikan; OTP memerlukan SMTP yang dikonfigurasi dan backend API aktif |
+| Forgot Password via Email OTP | Diimplementasikan; SMTP server harus aktif |
 | Enkripsi database lokal | Belum diimplementasikan |
 | Auto-block / auto-delete pesan | Tidak diimplementasikan |
 | Akses database privat WhatsApp | Tidak diimplementasikan |
@@ -589,14 +601,20 @@ Pengembangan berikutnya yang dapat dipertimbangkan:
 
 - Memperluas dan mengevaluasi daftar keyword, pola urgensi, pola data sensitif, whitelist, dan shortlink dari sumber tepercaya.
 - Menguji dengan dataset pesan phishing dan pesan normal yang berlabel, kemudian mengukur accuracy, precision, recall, dan F1-score.
-- Mengembangkan pengelolaan aturan dengan validasi, autentikasi, HTTPS, dan audit perubahan sebelum API dipublikasikan.
+- Menambahkan pembatasan percobaan login dan audit sebelum backend dipublikasikan.
 - Menambahkan perlindungan enkripsi untuk data riwayat lokal dan kebijakan retensi data.
 - Menguji kompatibilitas NotificationListenerService pada berbagai perangkat, versi Android, dan aplikasi SMS.
 - Mengkaji metode machine learning seperti Naive Bayes atau SVM sebagai pengembangan penelitian terpisah, setelah tersedia dataset berlabel yang memadai.
 - Mengkaji integrasi layanan reputasi URL melalui API dengan memperhatikan privasi dan keamanan data.
-- Mengembangkan autentikasi akun hanya jika benar-benar diperlukan, disertai backend dan pengelolaan kredensial yang aman.
+- Menyediakan backend produksi ber-HTTPS dan melakukan audit keamanan sebelum autentikasi dipakai di luar lingkungan pengembangan.
 
 Pengembangan tersebut merupakan rencana, bukan fitur yang sudah tersedia pada versi source code ini.
+
+### Build rilis Android
+
+Build rilis menolak API selain HTTPS dan menonaktifkan cleartext HTTP. Sebelum menjalankan `assembleRelease`, siapkan domain backend dengan sertifikat TLS tepercaya dan set Gradle property `MIVVI_RELEASE_API_BASE_URL`, misalnya di `%USERPROFILE%\\.gradle\\gradle.properties`. Salin `keystore.properties.example` menjadi `keystore.properties`, lalu isi kredensial signing key privat. File `.jks` dan `keystore.properties` diabaikan Git. Simpan keduanya di tempat aman; kehilangan key berarti tidak dapat memperbarui instalasi yang ditandatangani dengan key tersebut. Jangan membagikan file kunci atau kata sandinya.
+
+Build debug tetap ditujukan untuk emulator/perangkat pengembangan dan dapat memakai HTTP. Repository ini belum menyediakan API produksi; jangan distribusikan build rilis sebelum URL HTTPS backend benar-benar aktif.
 
 ---
 

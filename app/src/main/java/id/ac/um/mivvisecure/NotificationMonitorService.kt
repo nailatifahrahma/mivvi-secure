@@ -33,7 +33,8 @@ class NotificationMonitorService : NotificationListenerService() {
         val subText = extras?.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim().orEmpty()
         val bigText = extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
         val text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
-        val messagingStyle = Notification.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)
+        val messagingStyle = Notification.Builder.recoverBuilder(this, sbn.notification).style
+            as? Notification.MessagingStyle
         val latestMessage = messagingStyle?.messages?.lastOrNull()
         var body = when {
             latestMessage?.text?.isNotBlank() == true -> latestMessage.text.toString().trim()

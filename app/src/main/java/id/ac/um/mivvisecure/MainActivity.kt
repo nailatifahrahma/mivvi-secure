@@ -9,6 +9,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -16,13 +17,18 @@ import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.text.method.PasswordTransformationMethod
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -50,7 +56,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = cosmic
         window.navigationBarColor = cosmic
-        showWelcome()
+        if (AuthSessionStore.token(this) != null) showHome() else showWelcome()
     }
 
     override fun onResume() {
@@ -60,6 +66,17 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun pageWidth(): Int {
+        val availableWidth = (resources.configuration.screenWidthDp * resources.displayMetrics.density).toInt()
+        return minOf(availableWidth, dp(720))
+    }
+
+    private fun pagePadding(widthDp: Int = resources.configuration.screenWidthDp): Int = when {
+        widthDp < 360 -> dp(16)
+        widthDp >= 700 -> dp(28)
+        else -> dp(20)
+    }
+
     private fun gradientBackground(): GradientDrawable = GradientDrawable(
         GradientDrawable.Orientation.TL_BR, intArrayOf(cosmic, navy, Color.rgb(22, 25, 62))
     )
@@ -67,11 +84,20 @@ class MainActivity : Activity() {
     private fun createPage(title: String, subtitle: String? = null, showNav: Boolean = true): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
             background = gradientBackground()
+        }
+        if (Build.VERSION.SDK_INT >= 35) {
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                view.setPadding(0, bars.top, 0, bars.bottom)
+                insets
+            }
         }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(8))
+            setPadding(pagePadding(), dp(12), pagePadding(), dp(8))
+            setBackgroundColor(cosmic)
         }
         val brandRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -89,35 +115,41 @@ class MainActivity : Activity() {
         val telemetryTag = TextView(this).apply {
             text = "  // LOCAL V2.4"
             setTextColor(muted)
-            textSize = 10f
+            textSize = if (resources.configuration.screenWidthDp < 360) 9f else 10f
             typeface = Typeface.MONOSPACE
+            maxLines = 1
         }
+        if (resources.configuration.screenWidthDp < 360) telemetryTag.visibility = View.GONE
         brandRow.addView(telemetryTag)
-        top.addView(brandRow)
 
-        if (title.isNotBlank()) {
-            val heading = TextView(this).apply {
-                text = title
-                setTextColor(pearl)
-                textSize = 23f
-                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                setPadding(0, dp(6), 0, dp(2))
+        brandRow.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+        val accountIcon = TextView(this).apply {
+            text = "👤"
+            contentDescription = "Akun pribadi"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            isClickable = true
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(cardColor)
+                setStroke(dp(1), Color.argb(120, 99, 221, 232))
             }
-            top.addView(heading)
-        }
-        if (!subtitle.isNullOrBlank()) {
-            val sub = TextView(this).apply {
-                text = subtitle
-                setTextColor(muted)
-                textSize = 12.5f
-                setPadding(0, 0, 0, dp(4))
+            setOnClickListener {
+                if (AuthSessionStore.token(this@MainActivity) != null) showAccount()
+                else showLogin()
             }
-            top.addView(sub)
         }
-        root.addView(top)
+        brandRow.addView(accountIcon, LinearLayout.LayoutParams(dp(40), dp(40)))
+        top.addView(brandRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        root.addView(top, LinearLayout.LayoutParams(pageWidth(), ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(View(this).apply {
+            setBackgroundColor(Color.argb(90, 99, 221, 232))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
 
         currentPage = when (title) {
             "Beranda" -> "home"
+            "Akun Pribadi" -> "account"
             "Analisis Manual" -> "manual"
             "Aktivitas Notifikasi" -> "activities"
             "Riwayat Analisis" -> "history"
@@ -126,14 +158,48 @@ class MainActivity : Activity() {
             else -> currentPage
         }
 
-        val scroll = ScrollView(this).apply { isFillViewport = false; clipToPadding = false }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+            isVerticalScrollBarEnabled = false
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(4), dp(20), dp(24))
+            setPadding(pagePadding(), dp(4), pagePadding(), dp(28))
         }
-        scroll.addView(content)
+        if (title.isNotBlank()) {
+            text(
+                content,
+                title,
+                if (resources.configuration.screenWidthDp >= 700) 27f else 23f,
+                pearl,
+                bold = true,
+                top = 6,
+                bottom = if (subtitle.isNullOrBlank()) 12 else 2
+            ).maxLines = 3
+        }
+        if (!subtitle.isNullOrBlank()) {
+            text(content, subtitle, 13f, muted, bottom = 12).maxLines = 4
+        }
+        scroll.addView(content, FrameLayout.LayoutParams(pageWidth(), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL))
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         if (showNav) root.addView(buildBottomNav())
+        root.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+            val availableWidth = right - left
+            if (availableWidth > 0) {
+                val boundedWidth = minOf(availableWidth, dp(720))
+                if (top.layoutParams.width != boundedWidth) {
+                    top.layoutParams = top.layoutParams.apply { width = boundedWidth }
+                }
+                if (content.layoutParams.width != boundedWidth) {
+                    content.layoutParams = content.layoutParams.apply { width = boundedWidth }
+                }
+                val horizontalPadding = pagePadding((availableWidth / resources.displayMetrics.density).toInt())
+                if (content.paddingLeft != horizontalPadding) {
+                    content.setPadding(horizontalPadding, dp(4), horizontalPadding, dp(28))
+                }
+            }
+        }
         setContentView(root)
         return content
     }
@@ -165,11 +231,15 @@ class MainActivity : Activity() {
                 }
                 val labelView = TextView(this@MainActivity).apply {
                     text = label
-                    textSize = 10f
+                    textSize = if (resources.configuration.screenWidthDp < 360) 8.5f else 10f
+                    setAutoSizeTextTypeUniformWithConfiguration(8, 10, 1, TypedValue.COMPLEX_UNIT_SP)
                     gravity = Gravity.CENTER
                     setTextColor(if (isCurrent) cyan else muted)
                     typeface = Typeface.create("sans-serif", if (isCurrent) Typeface.BOLD else Typeface.NORMAL)
+                    maxLines = 1
+                    includeFontPadding = false
                 }
+                contentDescription = label
                 addView(iconView)
                 addView(labelView)
                 setOnClickListener {
@@ -223,8 +293,10 @@ class MainActivity : Activity() {
         val b = Button(this).apply {
             text = label
             isAllCaps = false
-            textSize = 13.5f
+            textSize = if (resources.configuration.screenWidthDp < 360) 13f else 14f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            maxLines = 2
+            gravity = Gravity.CENTER
             setTextColor(when {
                 primary -> cosmic
                 danger -> red
@@ -244,8 +316,8 @@ class MainActivity : Activity() {
                 }
                 cornerRadius = dp(12).toFloat()
             }
-            minHeight = dp(46)
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            minHeight = dp(48)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
             setOnClickListener { onClick() }
         }
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -254,26 +326,57 @@ class MainActivity : Activity() {
         return b
     }
 
-    private fun input(parent: LinearLayout, hint: String, multiline: Boolean = false, password: Boolean = false): EditText {
+    private fun input(parent: LinearLayout, hint: String, multiline: Boolean = false, password: Boolean = false,
+                      email: Boolean = false, numeric: Boolean = false): EditText {
         val edit = EditText(this).apply {
             this.hint = hint
             setHintTextColor(muted)
             setTextColor(pearl)
             textSize = 13.5f
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(12), dp(10), dp(if (password) 52 else 12), dp(10))
             background = GradientDrawable().apply {
                 setColor(Color.rgb(15, 22, 44))
                 cornerRadius = dp(10).toFloat()
                 setStroke(dp(1), Color.argb(90, 160, 170, 220))
             }
             if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            else if (email) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            else if (numeric) inputType = InputType.TYPE_CLASS_NUMBER
             else inputType = if (multiline) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             else InputType.TYPE_CLASS_TEXT
             if (multiline) { minLines = 4; gravity = Gravity.TOP; setSingleLine(false) } else setSingleLine(true)
+            if (password) transformationMethod = PasswordTransformationMethod.getInstance()
         }
         val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, if (multiline) dp(120) else dp(48))
         lp.bottomMargin = dp(10)
-        parent.addView(edit, lp)
+        if (password) {
+            val field = FrameLayout(this)
+            field.addView(edit, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            val visibilityButton = ImageButton(this).apply {
+                contentDescription = "Tampilkan kata sandi"
+                setImageResource(R.drawable.ic_visibility)
+                imageTintList = android.content.res.ColorStateList.valueOf(muted)
+                scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                background = null
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+            }
+            visibilityButton.setOnClickListener {
+                val wasVisible = edit.transformationMethod == null
+                val start = edit.selectionStart.coerceIn(0, edit.length())
+                val end = edit.selectionEnd.coerceIn(0, edit.length())
+                edit.transformationMethod = if (wasVisible) PasswordTransformationMethod.getInstance() else null
+                visibilityButton.setImageResource(if (wasVisible) R.drawable.ic_visibility else R.drawable.ic_visibility_off)
+                visibilityButton.contentDescription = if (wasVisible) "Tampilkan kata sandi" else "Sembunyikan kata sandi"
+                edit.setSelection(start, end)
+            }
+            field.addView(
+                visibilityButton,
+                FrameLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL)
+            )
+            parent.addView(field, lp)
+        } else {
+            parent.addView(edit, lp)
+        }
         return edit
     }
 
@@ -293,8 +396,8 @@ class MainActivity : Activity() {
         statCell(row, "PRIVACY", "0% CLOUD")
 
         action(body, "Mulai Proteksi", { showHome() })
-        action(body, "Sign In (Prototype UI)", { showLogin() }, false)
-        action(body, "Create Account (Prototype UI)", { showSignup() }, false)
+        action(body, "Sign In", { showLogin() }, false)
+        action(body, "Create Account", { showSignup() }, false)
         action(body, "Panduan Akses Notifikasi", { showNotificationGuide() }, false)
 
         text(body, "PROTOTYPE 1.0 • RULE-BASED RISK SCORING • ZERO CLOUD LOGS", 9.5f, muted, top = 16)
@@ -302,13 +405,31 @@ class MainActivity : Activity() {
 
     private fun showLogin() {
         val body = createPage("Sign In", "Masuk ke akun MIVVI SECURE.", false)
-        input(body, "Email address")
-        input(body, "Password", password = true)
+        text(body, if (BuildConfig.DEBUG)
+            "Login memerlukan koneksi ke server akun. Untuk emulator, gunakan base URL http://10.0.2.2:8000 di Pengaturan API."
+        else
+            "Login memerlukan server akun dengan HTTPS. Atur URL API HTTPS di Pengaturan API.", 11.5f, muted)
+        val email = input(body, "Email address", email = true)
+        val password = input(body, "Password", password = true)
         action(body, "Forgot Password?", { showForgotPassword() }, false)
-        action(body, "Sign In", {
-            AlertDialog.Builder(this).setTitle("Autentikasi belum tersedia")
-                .setMessage("Halaman login sudah tersedia sebagai prototipe UI, tetapi layanan akun belum dihubungkan. Silakan lanjutkan menggunakan mode tamu.")
-                .setPositiveButton("Continue as Guest") { _, _ -> showHome() }.setNegativeButton("Kembali", null).show()
+        action(body, "Verify Email / Enter OTP", {
+            val emailValue = email.text.toString().trim()
+            if (validEmail(emailValue)) showVerifyEmail(emailValue)
+            else showAuthError("Masukkan email akun yang menunggu verifikasi.")
+        }, false)
+        lateinit var signInButton: Button
+        signInButton = action(body, "Sign In", {
+            val emailValue = email.text.toString().trim()
+            val passwordValue = password.text.toString()
+            if (!validEmail(emailValue)) {
+                showAuthError("Masukkan alamat email yang valid.")
+            } else if (passwordValue.isBlank()) {
+                showAuthError("Kata sandi wajib diisi.")
+            } else {
+                runAuthRequest(signInButton) {
+                    AuthApiClient.login(authBaseUrl(), emailValue, passwordValue)
+                }
+            }
         })
         action(body, "Create Account", { showSignup() }, false)
         action(body, "Continue as Guest", { showHome() }, false)
@@ -316,30 +437,243 @@ class MainActivity : Activity() {
 
     private fun showSignup() {
         val body = createPage("Create Account", "Buat akun untuk pengalaman keamanan digitalmu.", false)
-        input(body, "Full name")
-        input(body, "Email address")
-        input(body, "Password", password = true)
-        input(body, "Confirm password", password = true)
-        val agree = CheckBox(this).apply { text = "Saya menyetujui Terms & Privacy Policy (demo)"; setTextColor(pearl) }
-        body.addView(agree)
-        action(body, "Create Account", {
-            if (!agree.isChecked) Toast.makeText(this, "Centang persetujuan terlebih dahulu.", Toast.LENGTH_SHORT).show()
-            else AlertDialog.Builder(this).setTitle("Pendaftaran demo")
-                .setMessage("Pendaftaran akun belum terhubung ke backend. Lanjutkan ke aplikasi sebagai tamu.")
-                .setPositiveButton("Lanjutkan") { _, _ -> showHome() }.setNegativeButton("Batal", null).show()
+        val name = input(body, "Full name")
+        val email = input(body, "Email address", email = true)
+        val password = input(body, "Password (minimal 8 karakter)", password = true)
+        val confirmPassword = input(body, "Confirm password", password = true)
+        text(body, "Nama dan email disimpan di server akun. Kata sandi disimpan sebagai hash, bukan teks biasa.", 11.5f, muted)
+        lateinit var registerButton: Button
+        registerButton = action(body, "Create Account", {
+            if (name.text.toString().trim().length < 2) showAuthError("Nama minimal 2 karakter.")
+            else if (!validEmail(email.text.toString().trim())) showAuthError("Masukkan alamat email yang valid.")
+            else if (password.text.length < 8) showAuthError("Kata sandi minimal 8 karakter.")
+            else if (password.text.toString() != confirmPassword.text.toString()) showAuthError("Konfirmasi kata sandi tidak sama.")
+            else {
+                val nameValue = name.text.toString().trim()
+                val emailValue = email.text.toString().trim()
+                val passwordValue = password.text.toString()
+                runRegistrationRequest(registerButton) {
+                    AuthApiClient.register(authBaseUrl(), nameValue, emailValue, passwordValue)
+                }
+            }
         })
         action(body, "Already have an account? Sign In", { showLogin() }, false)
     }
 
+    private fun runRegistrationRequest(button: Button, request: () -> AuthApiClient.VerificationChallenge) {
+        val originalLabel = button.text.toString()
+        button.isEnabled = false
+        button.text = "Mengirim kode..."
+        Thread {
+            try {
+                val challenge = request()
+                runOnUiThread {
+                    button.isEnabled = true
+                    button.text = originalLabel
+                    showVerifyEmail(challenge.email)
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    button.isEnabled = true
+                    button.text = originalLabel
+                    showAuthError(error.message ?: "Kode verifikasi belum dapat dikirim.")
+                }
+            }
+        }.start()
+    }
+
+    private fun showVerifyEmail(emailAddress: String) {
+        val body = createPage("Verifikasi Email", "Masukkan kode 6 digit yang dikirim ke $emailAddress.", false)
+        text(body, "Kode berlaku 10 menit. Periksa folder spam jika email belum terlihat.", 11.5f, muted)
+        val code = input(body, "Kode OTP 6 digit", numeric = true)
+        lateinit var verifyButton: Button
+        verifyButton = action(body, "Verifikasi & Masuk", {
+            val codeValue = code.text.toString().trim()
+            if (!codeValue.matches(Regex("^\\d{6}$"))) showAuthError("Masukkan kode OTP 6 digit.")
+            else runAuthRequest(verifyButton) {
+                AuthApiClient.verifyEmail(authBaseUrl(), emailAddress, codeValue)
+            }
+        })
+        lateinit var resendButton: Button
+        resendButton = action(body, "Kirim Ulang Kode", {
+            val originalLabel = resendButton.text.toString()
+            resendButton.isEnabled = false
+            resendButton.text = "Mengirim..."
+            Thread {
+                try {
+                    AuthApiClient.resendVerification(authBaseUrl(), emailAddress)
+                    runOnUiThread {
+                        resendButton.isEnabled = true
+                        resendButton.text = originalLabel
+                        Toast.makeText(this, "Kode verifikasi dikirim ulang.", Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: Exception) {
+                    runOnUiThread {
+                        resendButton.isEnabled = true
+                        resendButton.text = originalLabel
+                        showAuthError(error.message ?: "Kode belum dapat dikirim ulang.")
+                    }
+                }
+            }.start()
+        }, false)
+        action(body, "Kembali ke Sign In", { showLogin() }, false)
+    }
+
+    private fun showAccount() {
+        val body = createPage("Akun Pribadi", "Profil dan sesi akun MIVVI SECURE.")
+        val token = AuthSessionStore.token(this)
+        if (token == null) {
+            card(body, "Mode Tamu", "Belum ada akun yang masuk pada perangkat ini.")
+            action(body, "Sign In", { showLogin() })
+            action(body, "Create Account", { showSignup() }, false)
+            return
+        }
+
+        val name = AuthSessionStore.userName(this).orEmpty()
+        val email = AuthSessionStore.userEmail(this).orEmpty()
+        val profileCard = card(body, "Profil Akun", name, Color.argb(100, 99, 221, 232))
+        text(profileCard, email, 12.5f, muted, bottom = 0)
+        card(body, "Verifikasi Email", "Terverifikasi")
+        card(body, "Sesi", "Akun ini sedang masuk pada perangkat ini.")
+        text(body, "Informasi akun disimpan oleh server akun. Riwayat pesan dan analisis tetap tersimpan lokal di perangkat.", 11.5f, muted)
+        action(body, "Keluar dari Akun", { signOutFromAccount() }, false)
+    }
+
+    private fun signOutFromAccount() {
+        val token = AuthSessionStore.token(this)
+        Thread {
+            val remoteLogoutSucceeded = if (token == null) true else try {
+                AuthApiClient.logout(authBaseUrl(), token)
+                true
+            } catch (_: Exception) { false }
+            AuthSessionStore.clear(this)
+            runOnUiThread {
+                val message = if (remoteLogoutSucceeded) "Sesi berhasil diakhiri."
+                else "Token lokal dihapus; sesi server dapat berlaku sampai kedaluwarsa."
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                showWelcome()
+            }
+        }.start()
+    }
+
+    private fun validEmail(value: String): Boolean =
+        android.util.Patterns.EMAIL_ADDRESS.matcher(value).matches()
+
+    private fun authBaseUrl(): String = AppPrefs.apiBaseUrl(this)
+
+    private fun showAuthError(message: String) {
+        AlertDialog.Builder(this).setTitle("Tidak dapat melanjutkan").setMessage(message)
+            .setPositiveButton("Mengerti", null).show()
+    }
+
+    private fun runAuthRequest(button: Button, request: () -> AuthApiClient.Session) {
+        val originalLabel = button.text.toString()
+        button.isEnabled = false
+        button.text = "Menghubungkan..."
+        Thread {
+            try {
+                val session = request()
+                AuthSessionStore.save(this, session)
+                runOnUiThread {
+                    button.isEnabled = true
+                    button.text = originalLabel
+                    Toast.makeText(this, "Berhasil masuk sebagai ${session.user.email}", Toast.LENGTH_LONG).show()
+                    showHome()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    button.isEnabled = true
+                    button.text = originalLabel
+                    showAuthError(error.message ?: "Periksa koneksi dan konfigurasi server akun.")
+                }
+            }
+        }.start()
+    }
+
     private fun showForgotPassword() {
         val body = createPage("Forgot Password", "Masukkan email akun untuk pemulihan kata sandi.", false)
-        input(body, "Email address")
-        action(body, "Send Reset Link", {
-            AlertDialog.Builder(this).setTitle("Layanan belum terhubung")
-                .setMessage("Permintaan reset password belum dikirim karena API autentikasi belum tersedia.")
-                .setPositiveButton("Mengerti", null).show()
+        val email = input(body, "Email address", email = true)
+        lateinit var requestButton: Button
+        requestButton = action(body, "Kirim Kode Reset", {
+            val emailValue = email.text.toString().trim()
+            if (!validEmail(emailValue)) {
+                showAuthError("Masukkan alamat email yang valid.")
+            } else {
+                val originalLabel = requestButton.text.toString()
+                requestButton.isEnabled = false
+                requestButton.text = "Meminta kode..."
+                Thread {
+                    try {
+                        AuthApiClient.requestPasswordReset(authBaseUrl(), emailValue)
+                        runOnUiThread {
+                            requestButton.isEnabled = true
+                            requestButton.text = originalLabel
+                            showResetPassword(emailValue)
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            requestButton.isEnabled = true
+                            requestButton.text = originalLabel
+                            showAuthError(error.message ?: "Kode reset belum dapat dikirim.")
+                        }
+                    }
+                }.start()
+            }
         })
         action(body, "Back to Sign In", { showLogin() }, false)
+    }
+
+    private fun showResetPassword(emailAddress: String) {
+        val body = createPage("Reset Kata Sandi", "Jika email terdaftar, kode reset sudah dikirim ke $emailAddress.", false)
+        text(body, "Kode berlaku 10 menit. Setelah berhasil, semua sesi akun lama akan dicabut.", 11.5f, muted)
+        val code = input(body, "Kode reset 6 digit", numeric = true)
+        val newPassword = input(body, "Kata sandi baru (minimal 8 karakter)", password = true)
+        val confirmPassword = input(body, "Ulangi kata sandi baru", password = true)
+
+        lateinit var resetButton: Button
+        resetButton = action(body, "Ubah Kata Sandi", {
+            val codeValue = code.text.toString().trim()
+            val passwordValue = newPassword.text.toString()
+            if (!codeValue.matches(Regex("^\\d{6}$"))) showAuthError("Masukkan kode reset 6 digit.")
+            else if (passwordValue.length < 8) showAuthError("Kata sandi minimal 8 karakter.")
+            else if (passwordValue != confirmPassword.text.toString()) showAuthError("Konfirmasi kata sandi tidak sama.")
+            else {
+                val originalLabel = resetButton.text.toString()
+                resetButton.isEnabled = false
+                resetButton.text = "Memperbarui..."
+                Thread {
+                    try {
+                        AuthApiClient.confirmPasswordReset(authBaseUrl(), emailAddress, codeValue, passwordValue)
+                        runOnUiThread {
+                            resetButton.isEnabled = true
+                            resetButton.text = originalLabel
+                            Toast.makeText(this, "Kata sandi diubah. Silakan masuk kembali.", Toast.LENGTH_LONG).show()
+                            showLogin()
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            resetButton.isEnabled = true
+                            resetButton.text = originalLabel
+                            showAuthError(error.message ?: "Kata sandi belum dapat diubah.")
+                        }
+                    }
+                }.start()
+            }
+        })
+
+        action(body, "Kirim Ulang Kode", {
+            Thread {
+                try {
+                    AuthApiClient.requestPasswordReset(authBaseUrl(), emailAddress)
+                    runOnUiThread {
+                        Toast.makeText(this, "Jika akun terdaftar, kode reset akan dikirim.", Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: Exception) {
+                    runOnUiThread { showAuthError(error.message ?: "Kode reset belum dapat dikirim ulang.") }
+                }
+            }.start()
+        }, false)
+        action(body, "Kembali ke Sign In", { showLogin() }, false)
     }
 
     // =========================================================================
@@ -382,6 +716,10 @@ class MainActivity : Activity() {
         val body = createPage("Beranda", "Kenali risiko. Lindungi dirimu.")
         val isEnabled = simulatedNotificationAccess || AppPrefs.notificationAccessEnabled(this)
 
+        if (AuthSessionStore.token(this) != null) {
+            card(body, "Akun Terhubung", AuthSessionStore.userEmail(this).orEmpty())
+        }
+
         val shield = card(body, if (isEnabled) "Sistem Pemantau Aktif" else "Sistem Pemantau Belum Aktif",
             if (isEnabled) "Memeriksa pola teks mencurigakan (URL pendek, urgensi palsu, impersonasi bank) secara privat di perangkat tanpa mengirim data ke server."
             else "Aktifkan akses notifikasi agar MIVVI SECURE dapat menganalisis pesan SMS dan WhatsApp yang masuk.",
@@ -422,10 +760,22 @@ class MainActivity : Activity() {
     }
 
     private fun statCell(parent: LinearLayout, label: String, value: String, color: Int = cyan) {
-        val cell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(6), 0, 0) }
-        parent.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        text(cell, value, 22f, color, true, bottom = 1)
-        text(cell, label, 9.5f, muted, true, bottom = 0)
+        val horizontal = parent.orientation == LinearLayout.HORIZONTAL
+        val cell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (horizontal) Gravity.CENTER_HORIZONTAL else Gravity.START
+            setPadding(0, dp(6), 0, 0)
+        }
+        val params = if (horizontal) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        parent.addView(cell, params)
+        text(cell, value, if (resources.configuration.screenWidthDp < 360) 20f else 22f, color, true, bottom = 1)
+            .gravity = if (horizontal) Gravity.CENTER else Gravity.START
+        text(cell, label, if (resources.configuration.screenWidthDp < 360) 8.5f else 9.5f, muted, true, bottom = 0)
+            .apply {
+                gravity = if (horizontal) Gravity.CENTER else Gravity.START
+                maxLines = 2
+            }
     }
 
     // =========================================================================
@@ -440,10 +790,16 @@ class MainActivity : Activity() {
 
         text(body, "SUMBER PESAN", 11.5f, muted, true, top = 8, bottom = 4)
         val sourceRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        body.addView(sourceRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
+        body.addView(sourceRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         val btnSms = Button(this)
         val btnWa = Button(this)
+        listOf(btnSms, btnWa).forEach {
+            it.isAllCaps = false
+            it.textSize = 12f
+            it.maxLines = 2
+            it.minHeight = dp(48)
+        }
         fun updateSourceButtons() {
             btnSms.apply {
                 text = "SMS (Pesan)"
@@ -512,8 +868,10 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply { setColor(Color.rgb(35, 42, 72)); cornerRadius = dp(8).toFloat() }
             setOnClickListener { messageInput.setText(""); senderInput.setText("") }
         }
-        val tLp = LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(6) }
-        val tLp2 = LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(6) }
+        val tLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        val tLp2 = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(6) }
+        btnPaste.minHeight = dp(44)
+        btnClear.minHeight = dp(44)
         toolRow.addView(btnPaste, tLp)
         toolRow.addView(btnClear, tLp2)
 
@@ -1004,6 +1362,9 @@ class MainActivity : Activity() {
             text = "Pilih Semua (Skor 13)"
             textSize = 11.5f
             isAllCaps = false
+            maxLines = 2
+            minHeight = dp(48)
+            gravity = Gravity.CENTER
             setTextColor(cosmic)
             background = GradientDrawable().apply { setColor(cyan); cornerRadius = dp(8).toFloat() }
             setOnClickListener { checkBoxes.forEach { it.first.isChecked = true } }
@@ -1012,12 +1373,15 @@ class MainActivity : Activity() {
             text = "Reset (Skor 0)"
             textSize = 11.5f
             isAllCaps = false
+            maxLines = 2
+            minHeight = dp(48)
+            gravity = Gravity.CENTER
             setTextColor(pearl)
             background = GradientDrawable().apply { setColor(Color.rgb(38, 44, 76)); cornerRadius = dp(8).toFloat() }
             setOnClickListener { checkBoxes.forEach { it.first.isChecked = false } }
         }
-        val bLp = LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(6) }
-        val bLp2 = LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(6) }
+        val bLp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        val bLp2 = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(6) }
         btnRow.addView(bAll, bLp)
         btnRow.addView(bReset, bLp2)
         headerCard.addView(btnRow)
@@ -1059,9 +1423,12 @@ class MainActivity : Activity() {
         trusted.setText(prefs.getString(AppPrefs.KEY_TRUSTED_SENDERS, ""))
 
         text(body, "INTEGRASI DATA (RULES API)", 14f, pearl, true, top = 8, bottom = 4)
-        text(body, "Base URL backend untuk mengambil pembaruan aturan deteksi dan whitelist. Isi pesan tidak dikirim ke API.", 11.5f, muted)
-        val apiUrl = input(body, "http://127.0.0.1:8000")
-        apiUrl.setText(prefs.getString(AppPrefs.KEY_API_URL, "http://127.0.0.1:8000"))
+        text(body, if (BuildConfig.DEBUG)
+            "Base URL untuk aturan dan akun. Emulator Android memakai http://10.0.2.2:8000; ponsel memakai alamat IP LAN komputer. Isi pesan tidak dikirim ke API."
+        else
+            "Base URL API produksi. Build rilis hanya menerima HTTPS. Isi pesan tidak dikirim ke API.", 11.5f, muted)
+        val apiUrl = input(body, if (BuildConfig.DEBUG) AppPrefs.DEFAULT_API_URL else "https://api.example.com")
+        apiUrl.setText(AppPrefs.apiBaseUrl(this))
 
         action(body, "Simpan Pengaturan & Sinkronkan Aturan", {
             prefs.edit()

@@ -30,7 +30,8 @@ Threshold classifier
           v
 Android UI + local SQLite history
 
-Optional Rules API: Android --GET /api/v1/rules--> FastAPI
+Rules sync: Android --GET /api/v1/rules--> FastAPI
+Account auth: Android --POST/GET with bearer session--> FastAPI --SQLite--> users/sessions
 ```
 
 ## Wireless / mobile relationship
@@ -38,12 +39,12 @@ Optional Rules API: Android --GET /api/v1/rules--> FastAPI
 - SMS reaches the device through the cellular messaging service.
 - WhatsApp reaches the device through an internet data connection (cellular data or Wi-Fi).
 - MIVVI SECURE receives the available notification event from Android and performs deterministic feature extraction and scoring on the mobile device.
-- The optional API distributes rule configuration; it is not in the message-analysis path.
+- The API distributes rule configuration and handles account authentication; it is not in the message-analysis path.
 
 ## Permissions
 
 - `BIND_NOTIFICATION_LISTENER_SERVICE`: declared on the listener service; the user enables access manually in Android Settings.
-- `INTERNET`: only for optional rules synchronization.
+- `INTERNET`: for rules synchronization and account authentication.
 - No `READ_SMS`, `RECEIVE_SMS`, `READ_CONTACTS`, microphone, camera, or location permission is requested.
 
 ## Limitations

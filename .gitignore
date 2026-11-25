@@ -1,4 +1,5 @@
 .gradle/
+.gradle-user/
 .idea/
 local.properties
 **/build/
@@ -7,7 +8,9 @@ local.properties
 *.aab
 *.jks
 *.keystore
+keystore.properties
 server/.venv/
+server/data/
 server/__pycache__/
 server/**/*.pyc
 .DS_Store

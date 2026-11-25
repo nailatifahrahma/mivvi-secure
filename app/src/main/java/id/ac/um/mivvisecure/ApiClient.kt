@@ -13,6 +13,9 @@ object ApiClient {
         require(normalized.startsWith("http://") || normalized.startsWith("https://")) {
             "URL API harus diawali http:// atau https://"
         }
+        require(BuildConfig.DEBUG || normalized.startsWith("https://", ignoreCase = true)) {
+            "Build rilis hanya dapat terhubung ke API melalui HTTPS. Atur URL API HTTPS di Pengaturan."
+        }
         val connection = (URL("$normalized/api/v1/rules").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 7000
